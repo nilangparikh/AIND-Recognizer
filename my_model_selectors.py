@@ -77,8 +77,32 @@ class SelectorBIC(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection based on BIC scores
-        raise NotImplementedError
+        best_n_components = self.min_n_components
+        best_score = float("inf")
+        num_states = self.min_n_components
 
+        for n_components in range(self.min_n_components, self.max_n_components + 1):
+            try:
+                model = GaussianHMM(n_components=n_components, covariance_type="diag", n_iter=1000,
+                                    random_state=self.random_state, verbose=False).fit(self.X, self.lengths)
+
+                logL = model.score(self.X, self.lengths)
+                n = n_components
+                d = len(self.X[0])
+                n_parameters = n * n + 2 * n * d - 1
+                n_dataPoints = len(self.X)
+                BIC_score = -1 * logL + n_parameters * np.log(n_dataPoints)
+            except ValueError:
+                n_components += 1
+                continue
+
+            if best_score > BIC_score:
+                best_score = BIC_score
+                best_n_components = n_components
+
+            n_components += 1
+
+        return self.base_model(best_n_components)
 
 class SelectorDIC(ModelSelector):
     ''' select best model based on Discriminative Information Criterion
@@ -94,7 +118,42 @@ class SelectorDIC(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        best_n = self.random_state
+        best_DIC = float("-inf")
+        best_model = None
+
+        for n_components in range(self.min_n_components, self.max_n_components + 1):
+            try:
+                model = GaussianHMM(n_components, n_iter=1000).fit(self.X, self.lengths)
+                original_prob = model.score(self.X, self.lengths)
+
+                sum_prob_others = 0.0
+                word_count = 0
+
+                for word in self.words:
+                    if word == self.this_word:
+                        continue
+
+                    word_count += 1
+
+                    X_other, lengths_other = self.hwords[word]
+
+                    logL = model.score(X_other, lengths_other)
+                    sum_prob_others += logL
+
+                avg_prob_others = sum_prob_others / len(word_count)
+                DIC = original_prob - avg_prob_others
+
+                if DIC > best_DIC:
+                    best_DIC = DIC
+                    best_n = n_components
+
+            except:
+                pass
+
+        best_model = GaussianHMM(best_n, n_iter=1000).fit(self.X, self.lengths)
+
+        return best_model
 
 
 class SelectorCV(ModelSelector):
@@ -106,4 +165,35 @@ class SelectorCV(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection using CV
-        raise NotImplementedError
+        best_avg_score = float("-inf")
+        sumScore = 0
+        best_n = None
+        best_model = None
+        n_splits = min(len(self.lengths), 3)
+        split_method = KFold(n_splits)
+
+        for n_components in range(self.min_n_components, self.max_n_components + 1):
+            counter = 0
+
+            for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
+                try:
+                    counter += 1
+
+                    X_train, lengths_train = combine_sequences(cv_train_idx, self.sequences)
+                    X_test, lengths_test = combine_sequences(cv_test_idx, self.sequences)
+                    model = GaussianHMM(n_components, n_iter=1000).fit(X_train, lengths_train)
+                    logL = model.score(X_test, lengths_test)
+
+                    sumScore += logL
+                except:
+                    pass
+
+            avgScore = sumScore / counter
+
+            if avgScore > best_avg_score:
+                best_avg_score= avgScore
+                best_n = n_components
+
+        best_model = GaussianHMM(best_n, n_iter=1000).fit(self.X, self.lengths)
+
+        return best_model
