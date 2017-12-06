@@ -141,7 +141,7 @@ class SelectorDIC(ModelSelector):
                     logL = model.score(X_other, lengths_other)
                     sum_prob_others += logL
 
-                avg_prob_others = sum_prob_others / len(word_count)
+                avg_prob_others = sum_prob_others / (len(self.words) - 1)
                 DIC = original_prob - avg_prob_others
 
                 if DIC > best_DIC:
